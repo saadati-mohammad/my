@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ساده‌ترین پروکسی</title>
+</head>
+<body>
+    <h3>وارد آدرس سایت شوید:</h3>
+    <input type="text" id="url" style="width: 400px; padding: 10px;" placeholder="https://google.com">
+    <button onclick="go()">برو</button>
+    <hr>
+    <iframe id="frame" style="width: 100%; height: 500px;"></iframe>
+    
+    <script>
+        function go() {
+            let url = document.getElementById('url').value;
+            if (!url.startsWith('http')) url = 'https://' + url;
+            
+            // تلاش مستقیم
+            document.getElementById('frame').src = url;
+            
+            // اگه خطا داد، پیام بده
+            setTimeout(() => {
+                alert('اگر صفحه خالی ماند، سایت مورد نظر فیلتر است.\nراه حل: از مرورگر Tor استفاده کنید.');
+            }, 5000);
+        }
+    </script>
+</body>
+</html>
