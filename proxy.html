@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GitHub Raw Proxy</title>
+    <style>
+        body { font-family: Tahoma, sans-serif; max-width: 1000px; margin: 20px auto; padding: 20px; }
+        input { width: 70%; padding: 10px; font-size: 16px; }
+        button { padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; font-size: 16px; }
+        button:hover { background: #218838; }
+        .result { margin-top: 20px; border: 1px solid #ddd; padding: 15px; background: #f9f9f9; }
+        iframe { width: 100%; height: 600px; border: 1px solid #ccc; }
+        .error { color: red; }
+    </style>
+</head>
+<body>
+    <h2>🔗 Personal Proxy (via GitHub Raw)</h2>
+    <p>ورودی: آدرس سایت مورد نظر را وارد کنید</p>
+    <input type="text" id="targetUrl" placeholder="مثال: https://google.com" style="direction: ltr;">
+    <button onclick="loadSite()">🚀 برو</button>
+    
+    <div class="result">
+        <div id="status">در حال انتظار...</div>
+        <iframe id="contentFrame" sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-modals"></iframe>
+    </div>
+
+    <script>
+        async function loadSite() {
+            let url = document.getElementById('targetUrl').value.trim();
+            if (!url) {
+                alert('لطفا آدرس را وارد کنید');
+                return;
+            }
+            if (!url.startsWith('http')) {
+                url = 'https://' + url;
+            }
+            
+            const iframe = document.getElementById('contentFrame');
+            const statusDiv = document.getElementById('status');
+            
+            statusDiv.innerHTML = '⏳ در حال بارگذاری: ' + url;
+            statusDiv.style.color = 'blue';
+            
+            // تلاش مستقیم با iframe
+            iframe.src = url;
+            
+            // اگر iframe موفق نشد (خطای CORS یا فیلتر)، روش جایگزین
+            setTimeout(() => {
+                try {
+                    // بررسی آیا iframe محتوا دارد یا نه
+                    const doc = iframe.contentDocument || iframe.contentWindow.document;
+                    if (!doc || doc.location.href === 'about:blank') {
+                        statusDiv.innerHTML = '⚠️ روش مستقیم کار نکرد، تلاش با پروکسی...';
+                        loadWithProxy(url);
+                    } else {
+                        statusDiv.innerHTML = '✅ بارگذاری شد: ' + url;
+                        statusDiv.style.color = 'green';
+                    }
+                } catch(e) {
+                    statusDiv.innerHTML = '⚠️ روش مستقیم کار نکرد، تلاش با پروکسی...';
+                    loadWithProxy(url);
+                }
+            }, 3000);
+        }
+        
+        async function loadWithProxy(url) {
+            const proxyUrl = 'https://api.allorigins.win/get?url=' + encodeURIComponent(url);
+            const iframe = document.getElementById('contentFrame');
+            const statusDiv = document.getElementById('status');
+            
+            try {
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                
+                if (data && data.contents) {
+                    // نوشتن محتوا در iframe
+                    const doc = iframe.contentDocument || iframe.contentWindow.document;
+                    doc.open();
+                    doc.write(data.contents);
+                    doc.close();
+                    statusDiv.innerHTML = '✅ بارگذاری شد (از طریق پروکسی): ' + url;
+                    statusDiv.style.color = 'green';
+                } else {
+                    throw new Error('پاسخ نامعتبر');
+                }
+            } catch(error) {
+                statusDiv.innerHTML = '❌ خطا: ' + error.message;
+                statusDiv.style.color = 'red';
+                iframe.srcdoc = '<html><body style="color:red; padding:20px"><h3>خطا در بارگذاری</h3><p>سایت ' + url + ' قابل دسترسی نیست.</p><p>علت: ' + error.message + '</p></body></html>';
+            }
+        }
+    </script>
+</body>
+</html>
