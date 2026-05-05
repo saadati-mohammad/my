@@ -1,0 +1,136 @@
+name: Proxy Server
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+  schedule:
+    - cron: '*/30 * * * *'  # هر 30 دقیقه یکبار اجرا می‌شود تا سرور روشن بماند
+
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350  # تقریباً 6 ساعت (حداکثر رایگان گیت‌هاب)
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install proxy
+      run: npm install -g local-cors-proxy http-proxy
+    
+    - name: Create proxy server
+      run: |
+        cat > server.js << 'EOF'
+        const http = require('http');
+        const https = require('https');
+        const url = require('url');
+        
+        const server = http.createServer((req, res) => {
+            // تنظیم CORS headers
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', '*');
+            
+            if (req.method === 'OPTIONS') {
+                res.writeHead(200);
+                res.end();
+                return;
+            }
+            
+            // دریافت آدرس واقعی از path
+            let targetUrl = req.url.slice(1); // حذف اسلش اول
+            if (!targetUrl || targetUrl === '') {
+                res.writeHead(200, { 'Content-Type': 'text/html' });
+                res.end(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>GitHub Actions Proxy</title></head>
+                    <body>
+                        <h2>✅ Proxy is running!</h2>
+                        <p>Usage: https://[your-url]/https://google.com</p>
+                        <input type="text" id="url" style="width:400px" placeholder="https://google.com">
+                        <button onclick="location.href='/'+document.getElementById('url').value">Go</button>
+                    </body>
+                    </html>
+                `);
+                return;
+            }
+            
+            if (!targetUrl.startsWith('http')) {
+                targetUrl = 'https://' + targetUrl;
+            }
+            
+            console.log('Proxying:', targetUrl);
+            
+            const parsed = url.parse(targetUrl);
+            const protocol = parsed.protocol === 'https:' ? https : http;
+            
+            const proxyReq = protocol.get(targetUrl, (proxyRes) => {
+                res.writeHead(proxyRes.statusCode, {
+                    'Content-Type': proxyRes.headers['content-type'],
+                    'Access-Control-Allow-Origin': '*'
+                });
+                proxyRes.pipe(res);
+            });
+            
+            proxyReq.on('error', (err) => {
+                console.error('Proxy error:', err);
+                res.writeHead(500, { 'Content-Type': 'text/plain' });
+                res.end('Proxy Error: ' + err.message);
+            });
+        });
+        
+        const PORT = process.env.PORT || 8080;
+        server.listen(PORT, '0.0.0.0', () => {
+            console.log(\`Proxy running on port \${PORT}\`);
+            console.log('Usage: /http://example.com or /https://google.com');
+        });
+        
+        // نگه داشتن برنامه برای همیشه
+        process.stdin.resume();
+        EOF
+        
+    - name: Start proxy
+      run: node server.js &
+      
+    - name: Get public URL
+      run: |
+        # دریافت آدرس عمومی از GitHub Actions
+        for i in {1..30}; do
+          RESPONSE=$(curl -s http://localhost:8080/ 2>/dev/null | head -c 100)
+          if [ -n "$RESPONSE" ]; then
+            echo "✅ Proxy is running on port 8080"
+            echo "PROXY_URL=http://localhost:8080" >> $GITHUB_ENV
+            break
+          fi
+          sleep 2
+        done
+        
+    - name: Keep alive
+      run: |
+        echo "Proxy is running. Access via:"
+        echo "https://${{ github.repository_owner }}.github.io/my/ (نیاز به صفحه استاتیک)"
+        echo ""
+        echo "برای دسترسی، از سرویس localtunnel یا ngrok استفاده کنید:"
+        echo "----------------------------------------"
+        
+        # نصب localtunnel
+        npm install -g localtunnel
+        
+        # ایجاد تونل عمومی
+        lt --port 8080 --subdomain proxy-${{ github.run_id }} &
+        
+        sleep 5
+        
+        echo ""
+        echo "🎯 آدرس پروکسی شما:"
+        curl -s http://localhost:4040/api/tunnels | grep -o 'https://[^\"]*\.loca\.lt' || echo "لطفاً صبر کنید..."
+        
+        # نگه داشتن workflow برای مدت طولانی
+        sleep 6h
