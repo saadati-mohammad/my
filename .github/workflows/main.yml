@@ -1,0 +1,108 @@
+name: Personal Proxy Server
+
+on:
+  workflow_dispatch:  # فقط با کلیک دستی شما اجرا شود
+
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Create proxy script
+        run: |
+          cat > proxy.js << 'EOF'
+          const http = require('http');
+          const https = require('https');
+          const url = require('url');
+          
+          const server = http.createServer((req, res) => {
+              // اجازه دسترسی از هر جایی
+              res.setHeader('Access-Control-Allow-Origin', '*');
+              res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+              
+              if (req.method === 'OPTIONS') {
+                  res.writeHead(200);
+                  res.end();
+                  return;
+              }
+              
+              // حذف اسلش اول برای گرفتن آدرس
+              let target = req.url.slice(1);
+              
+              // صفحه اصلی: یک فرم ساده
+              if (!target || target === '') {
+                  res.writeHead(200, { 'Content-Type': 'text/html' });
+                  res.end(`
+                      <!DOCTYPE html>
+                      <html dir="rtl">
+                      <head>
+                          <title>پروکسی شخصی</title>
+                          <style>
+                              body { font-family: Tahoma; max-width: 800px; margin: 50px auto; padding: 20px; }
+                              input { width: 80%; padding: 10px; margin: 10px 0; }
+                              button { padding: 10px 20px; background: #28a745; color: white; border: none; cursor: pointer; }
+                              iframe { width: 100%; height: 500px; margin-top: 20px; border: 1px solid #ccc; }
+                          </style>
+                      </head>
+                      <body>
+                          <h2>🔗 پروکسی شخصی - فقط برای شما</h2>
+                          <input type="text" id="url" placeholder="مثال: google.com" style="direction: ltr;">
+                          <button onclick="loadSite()">برو</button>
+                          <iframe id="frame"></iframe>
+                          <script>
+                              function loadSite() {
+                                  let url = document.getElementById('url').value;
+                                  if (!url.startsWith('http')) url = 'https://' + url;
+                                  document.getElementById('frame').src = '/' + url;
+                              }
+                          </script>
+                          <p style="font-size:12px; color:gray;">این پروکسی از طریق GitHub Actions اجرا می‌شود</p>
+                      </body>
+                      </html>
+                  `);
+                  return;
+              }
+              
+              if (!target.startsWith('http')) {
+                  target = 'https://' + target;
+              }
+              
+              console.log('Proxying:', target);
+              
+              const parsed = url.parse(target);
+              const protocol = parsed.protocol === 'https:' ? https : http;
+              
+              const proxyReq = protocol.get(target, (proxyRes) => {
+                  res.writeHead(proxyRes.statusCode, {
+                      'Content-Type': proxyRes.headers['content-type'] || 'text/html',
+                      'Access-Control-Allow-Origin': '*'
+                  });
+                  proxyRes.pipe(res);
+              });
+              
+              proxyReq.on('error', (err) => {
+                  res.writeHead(500);
+                  res.end('Error: ' + err.message);
+              });
+          });
+          
+          const PORT = 8080;
+          server.listen(PORT, '0.0.0.0', () => {
+              console.log(`✅ Proxy running on port ${PORT}`);
+              console.log(`🌐 Access via: http://localhost:${PORT}`);
+          });
+          
+          // نگه داشتن برنامه
+          process.stdin.resume();
+          EOF
+          
+      - name: Start proxy server
+        run: node proxy.js &
+        
+      - name: Install localtunnel
+        run: npm install -g localtunnel
+        
+      - name: Create public tunnel
+        run: |
+          echo "⏳ در حال ایجاد تونل عمومی..."
+          npx localtunnel --port 8080 --subdomain proxy-${{ github.run_id }}
